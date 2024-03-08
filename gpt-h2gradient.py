@@ -42,6 +42,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
     def __init__(self, application):
         Gtk.Window.__init__(self, title='EzGradient', application=application)
         self.set_default_size(413, 237)
+        self.set_resizable(False)
 
         # Create buttons
         self.live_update_toggle = Gtk.ToggleButton(label='Live Update')
@@ -95,16 +96,13 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         grid.attach(button_del_colorbutton, 1, 1, 1, 1)
         grid.attach(button_generate, 2, 1, 1, 1)
         grid.attach(self.color_buttons_vbox, 0, 2, 3, 1)
+        grid.attach(button_open_popover, 0, 3, 1, 1)
         grid.attach(button_save, 1, 3, 1, 1)
         grid.attach(button_delete, 2, 3, 1, 1)
-        grid.attach(button_open_popover, 0, 3, 1, 1)
 
         # Add the grid to the window
         self.set_child(grid)
 
-        self._thread_running = False
-        self._transitioning = False
-        self.num_leds = 40
 
         filename = 'gradients.json'
         self.gradient_manager = GradientManager(filename)
@@ -114,7 +112,8 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
             self.gradient_manager.add_gradient('Sunset', [(255, 0, 0), (255, 165, 0), (255, 255, 0)])
             self.gradient_manager.save_to_file()
 
-        self.popover = Gtk.Popover() #create_popover wuz here
+        # Create popover
+        self.popover = Gtk.Popover()
         listbox = Gtk.ListBox()
         listbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
         listbox.connect('row-activated', self.on_listbox_row_activate)
@@ -136,8 +135,6 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
             self.die()
         signal(SIGINT, signal_handler)
 
-        self.set_resizable(False)
-
         # Create save gradient dialog window
         self.save_gradient_dialog = Gtk.Window()
         self.save_gradient_dialog.set_title('Enter Gradient Name')
@@ -157,8 +154,10 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         dialog_grid.attach(dialog_entry, 0, 0, 1, 1)
 
         self.shady_buttons = (button_del_colorbutton, button_generate, button_save)
-
-        self._transitioning_interrupt = True
+        # Threading flags
+        self._thread_running = False
+        self._transitioning = False
+        self._transitioning_interrupt = False
 
     def on_button_delete_clicked(self, button): #Add a confirmation here! TODO
         gradient_name = self.popover.get_child().get_selected_row()
@@ -272,35 +271,35 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
                 ))
         return colors
 
-    def update_gradient(self):#, num_leds=40):
+    def update_gradient(self, num_leds=40):
         self.colors = self.retrieve_colors()
         if not self.colors:
             self.colors = [(0, 0, 0)]
-        gradient = self.generate_circular_gradient(self.colors)
-        gradient.extend(gradient[:self.num_leds])
+        gradient = self.generate_circular_gradient(self.colors, num_leds)
+        gradient.extend(gradient[:num_leds])
         if not self._thread_running:
             self.gradient = gradient
-            self.run_update_thread()
+            self.run_update_thread(num_leds)
         else:
             if self._transitioning:
                 self._transitioning_interrupt = True
-            transition = self.generate_circular_gradient((self.current_colour[-1], gradient[0]), not_circular=True)
+            transition = self.generate_circular_gradient((self.current_colour[-1], gradient[0]), num_leds, not_circular=True)
             self.gradient_transition = []
             self.gradient_transition.extend(self.current_colour)
             self.gradient_transition.extend(transition)
-            self.gradient_transition.extend(gradient[:self.num_leds])
+            self.gradient_transition.extend(gradient[:num_leds])
             self._transitioning = True
             self.gradient = gradient
 
-    def generate_circular_gradient(self, colors, not_circular=False):#num_leds=40,
+    def generate_circular_gradient(self, colors, num_leds, not_circular=False):
         gradient = []
 
         for i in range(len(colors) - not_circular):
             start_color = colors[i]
             end_color = colors[(i + 1) % len(colors)]
 
-            for led_index in range(self.num_leds):
-                ratio = led_index / (self.num_leds - 1)
+            for led_index in range(num_leds):
+                ratio = led_index / (num_leds - 1)
                 r = start_color[0] + ratio * (end_color[0] - start_color[0])
                 g = start_color[1] + ratio * (end_color[1] - start_color[1])
                 b = start_color[2] + ratio * (end_color[2] - start_color[2])
@@ -308,7 +307,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
 
         return gradient
 
-    def run_update_thread(self, delay=0.03):
+    def run_update_thread(self, num_leds, delay=0.03):
         self._thread_run_delay = delay
         devices = []
         channels = ['led1', 'led2']
@@ -329,12 +328,12 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
 
             self._thread_running = True
             while self._thread_running:
-                for splice_ind in range(self.num_leds * len(self.colors)):
+                for splice_ind in range(num_leds * len(self.colors)):
                     if self._transitioning:
-                        for splice_ind1 in range(self.num_leds * 2):
+                        for splice_ind1 in range(num_leds * 2):
                             if self._transitioning_interrupt:
                                 break
-                            self.current_colour = self.gradient_transition[splice_ind1:self.num_leds+splice_ind1]
+                            self.current_colour = self.gradient_transition[splice_ind1:num_leds+splice_ind1]
                             set_colours(self.current_colour)
                         if self._transitioning_interrupt:
                             self._transitioning_interrupt = False
@@ -342,7 +341,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
                             self._transitioning = False
                             break # Reset to beginning of gradient, where transition ends
                     else:
-                        self.current_colour = self.gradient[splice_ind:self.num_leds+splice_ind]
+                        self.current_colour = self.gradient[splice_ind:num_leds+splice_ind]
                         set_colours(self.current_colour)
                     if not self._thread_running:
                         break
@@ -372,4 +371,3 @@ class EzGradientApp(Gtk.Application):
 
 app = EzGradientApp()
 app.run()
-# Add a delete confirmation
