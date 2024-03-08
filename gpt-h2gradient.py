@@ -45,11 +45,12 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
 
         # Create buttons
         self.live_update_toggle = Gtk.ToggleButton(label='Live Update')
-        button_add_colorbutton = Gtk.Button(label='Add ColorButtons')
+        button_add_colorbutton = Gtk.Button(label='Add ColorButton')
         button_del_colorbutton = Gtk.Button(label='Delete ColorButton')
         button_generate = Gtk.Button(label='Generate')
         button_save = Gtk.Button(label='Save')
         button_delete = Gtk.Button(label='Delete')
+        button_open_popover = Gtk.MenuButton(label='Open Popover') # has no 'clicked' signal
 
         # Create a scale widget
         scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 6, .1)
@@ -96,6 +97,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         grid.attach(self.color_buttons_vbox, 0, 2, 3, 1)
         grid.attach(button_save, 1, 3, 1, 1)
         grid.attach(button_delete, 2, 3, 1, 1)
+        grid.attach(button_open_popover, 0, 3, 1, 1)
 
         # Add the grid to the window
         self.set_child(grid)
@@ -111,61 +113,122 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         else:
             self.gradient_manager.add_gradient('Sunset', [(255, 0, 0), (255, 165, 0), (255, 255, 0)])
             self.gradient_manager.save_to_file()
-        self.popover = self.create_popover()
-        button_open_popover = Gtk.MenuButton(label='Open Popover')
+
+        self.popover = Gtk.Popover() #create_popover wuz here
+        listbox = Gtk.ListBox()
+        listbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        listbox.connect('row-activated', self.on_listbox_row_activate)
+        popover.set_child(listbox)
         button_open_popover.set_popover(self.popover)
-        grid.attach(button_open_popover, 0, 3, 1, 1)
+
+        def update_listbox():
+            listbox.remove_all()
+            # Populate listbox from GradientManager
+            for gradient_name in self.gradient_manager.get_gradients().keys():
+                row = Gtk.ListBoxRow()
+                row.set_child(Gtk.Label(label=gradient_name))
+                listbox.append(row)
+        popover._update_listbox = update_listbox
+        update_listbox()
 
         def signal_handler(sig, frame):
             print('\nCaught Ctrl+C! Exiting gracefully.')
             self.die()
         signal(SIGINT, signal_handler)
 
-        self.grid = grid
-
         self.set_resizable(False)
 
-        self.dialog = Gtk.Window() # Rename self.dialog to self.dialog_save_gradient
-        self.dialog.set_title('Enter Gradient Name')
-        self.dialog.set_default_size(275, 50)
-        self.dialog.set_transient_for(self)
-        self.dialog.set_modal(True)
-        self.dialog.set_resizable(False)
-        self.dialog.set_hide_on_close(True)
-        entry = Gtk.Entry()
-        entry.set_placeholder_text('Then press [Enter]')
-        entry.set_width_chars(30)  # Dialog width
-        entry.connect('activate', self.on_entry_complete)
-        grid = Gtk.Grid() #rename grid to dialog_grid
-        grid.attach(entry, 0, 0, 1, 1)
-        grid.set_margin_top(8)
-        grid.set_margin_start(8)
-        self.dialog.set_child(grid)
+        # Create save gradient dialog window
+        self.save_gradient_dialog = Gtk.Window()
+        self.save_gradient_dialog.set_title('Enter Gradient Name')
+        self.save_gradient_dialog.set_default_size(275, 50)
+        self.save_gradient_dialog.set_transient_for(self)
+        self.save_gradient_dialog.set_modal(True)
+        self.save_gradient_dialog.set_resizable(False)
+        self.save_gradient_dialog.set_hide_on_close(True)
+        dialog_grid = Gtk.Grid()
+        dialog_grid.set_margin_top(8)
+        dialog_grid.set_margin_start(8)
+        dialog_entry = Gtk.Entry()
+        dialog_entry.set_placeholder_text('Then press [Enter]')
+        dialog_entry.set_width_chars(30)  # Entry width
+        dialog_entry.connect('activate', self.on_entry_complete)
+        self.save_gradient_dialog.set_child(dialog_grid)
+        dialog_grid.attach(dialog_entry, 0, 0, 1, 1)
 
-        self.button_del_colorbutton = button_del_colorbutton
-        self.button_generate = button_generate
-        self.button_save = button_save
+        self.shady_buttons = (button_del_colorbutton, button_generate, button_save)
 
         self._transitioning_interrupt = True
 
-    def update_size(self):
-        # Get the preferred width and height of the contents
-        requisition = self.grid.get_preferred_size()
-        width, height = requisition[0].width, requisition[0].height
-        self.set_size_request(int(width), int(height) + 6)
-
-    def die(self, *args):
-        self._thread_running = False
-        self.gradient_manager.save_to_file()
-        exit()
+    def on_button_delete_clicked(self, button): #Add a confirmation here! TODO
+        gradient_name = self.popover.get_child().get_selected_row()
+        if gradient_name:
+            gradient_name = gradient_name.get_child().get_text()
+            self.gradient_manager.delete_gradient(gradient_name)
+            self.popover._update_listbox()
 
     def on_button_save_clicked(self, button):
         self.dialog.present()
 
+    def on_button_generate_clicked(self, button):
+        # Generate circular gradient with colors from ColorButtons
+        self.update_gradient()
+
+    def on_live_update_toggled(self, toggle_button):
+        self.update_gradient()
+        # This toggle itself is a flag for checks in on_button_add_colorbutton_clicked, del and on ColorDialog change (does speed/delay change even if it is off?)
+
+    def on_scale_value_changed(self, scale):
+        value = scale.get_value()
+        self._thread_run_delay = value / 100
+
+    def on_color_set(self, *args):
+        # Check if live update is enabled and update colors
+        if self.live_update_toggle.get_active():
+            self.update_gradient()
+
+    def update_size(self):
+        # Get the preferred width and height of the contents
+        self.set_size_request(0, 0) # Otherwise never shrinks with window.get_preferred_size()
+        requisition = self.get_preferred_size()
+        width, height = requisition[0].width, requisition[0].height
+        self.set_size_request(int(width), int(height) + 6)
+
+    def on_button_add_colorbutton_clicked(self, *args):
+        # Create a new ColorButton
+        new_color_button = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog())#.new_with_rgba(Gdk.RGBA(1, 0, 0, 1))
+        new_color_button.connect('notify', self.on_color_set)
+        # Add the new ColorButton to the VBox
+        self.color_buttons_vbox.append(new_color_button)
+        self.color_buttons_vbox.children.append(new_color_button)
+        # Resize window
+        self.update_size()
+
+        if self.live_update_toggle.get_active():
+            self.update_gradient()
+
+        for button in self.shady_buttons:
+            button.set_sensitive(True)
+
+    def on_button_del_colorbutton_clicked(self, *args):
+        # Delete the last ColorButton from the VBox
+        if self.color_buttons_vbox.children:
+            last_color_button = self.color_buttons_vbox.children.pop()
+            self.color_buttons_vbox.remove(last_color_button)
+            # Resize window
+            self.update_size()
+
+            if self.live_update_toggle.get_active():
+                self.update_gradient()
+
+            if not self.color_buttons_vbox.children:
+                for button in self.shady_buttons:
+                    button.set_sensitive(False)
+
     def on_entry_complete(self, entry):
         name = entry.get_text()
-        colours = [color_button.get_rgba() for color_button in self.color_buttons_vbox.children]
-        colours = [(int(rgba_color.red * 255), int(rgba_color.green * 255), int(rgba_color.blue * 255)) for rgba_color in colours]
+        colours = [color_button.get_rgba() for color_button in self.color_buttons_vbox.children] # Get colors from ColorButtons
+        colours = [(int(rgba_color.red * 255), int(rgba_color.green * 255), int(rgba_color.blue * 255)) for rgba_color in colours] # Convert to 0-255 values
         ecode = self.gradient_manager.add_gradient(name, colours)
         if ecode:
             entry.set_text('Name already taken!')
@@ -173,18 +236,11 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
             self.dialog.close()
             self.popover._update_listbox()
 
-    def on_button_delete_clicked(self, button):
-        gradient_name = self.popover.get_child().get_selected_row()
-        if gradient_name:
-            gradient_name = gradient_name.get_child().get_text()
-            self.gradient_manager.delete_gradient(gradient_name)
-            self.popover._update_listbox()
-
     def on_listbox_row_activate(self, listbox, row):
         label_text = row.get_child().get_text()
         gradient_loaded = self.gradient_manager.get_gradients()[label_text]
-        # Adjust the number of color buttons
-        num_buttons=len(gradient_loaded) # adjust_color_buttons wuz here
+
+        num_buttons = len(gradient_loaded) # adjust_color_buttons wuz here
         # Create or remove color buttons to match the specified number
         current_buttons = len(self.color_buttons_vbox.children)
         if current_buttons < num_buttons:
@@ -201,80 +257,21 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
             color_RGBA.parse(f'rgb({",".join(str(c) for c in color)})')
             color_button.set_rgba(color_RGBA)
 
-        #self.popover.popdown()
+    def retrieve_colors(self):
+        # Retrieve colors from ColorButtons in the VBox and return an array of RGB tuples
+        colors = []
+        for child in self.color_buttons_vbox.children:
+            if isinstance(child, Gtk.ColorDialogButton):
+                color = child.get_rgba()
+                # Append RGB values without alpha
+                colors.append((
+                    int(color.red * 255),
+                    int(color.green * 255),
+                    int(color.blue * 255),
+                ))
+        return colors
 
-    def create_popover(self):
-        popover = Gtk.Popover()
-        listbox = Gtk.ListBox()
-        listbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
-        listbox.connect('row-activated', self.on_listbox_row_activate)
-        popover.set_child(listbox)
-
-        def update_listbox():
-            listbox.remove_all()
-            # Populate listbox from GradientManager
-            for gradient_name in self.gradient_manager.get_gradients().keys():
-                row = Gtk.ListBoxRow()
-                row.set_child(Gtk.Label(label=gradient_name))
-                listbox.append(row)
-
-        update_listbox()
-        popover._update_listbox = update_listbox
-        return popover
-
-    def on_scale_value_changed(self, scale):
-        value = scale.get_value()
-        self._thread_run_delay = value / 100
-
-    def on_color_set(self, *args):
-        # Check if live update is enabled and update colors
-        if self.live_update_toggle.get_active():
-            self.generate_main_gradient()
-
-    def on_button_add_colorbutton_clicked(self, *args):
-        # Create a new ColorButton
-        new_color_button = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog())#.new_with_rgba(Gdk.RGBA(1, 0, 0, 1))
-        new_color_button.connect('notify', self.on_color_set)
-        # Add the new ColorButton to the VBox
-        self.color_buttons_vbox.append(new_color_button)
-        self.color_buttons_vbox.children.append(new_color_button)
-        # Resize window
-        self.update_size()
-
-        # Check if live update is enabled and update colors
-        if self.live_update_toggle.get_active():
-            self.generate_main_gradient()
-
-        self.button_del_colorbutton.set_sensitive(True)
-        self.button_generate.set_sensitive(True)
-        self.button_save.set_sensitive(True)
-
-    def on_button_del_colorbutton_clicked(self, *args):
-        # Delete the last ColorButton from the VBox
-        if self.color_buttons_vbox.children:
-            last_color_button = self.color_buttons_vbox.children.pop()
-            self.color_buttons_vbox.remove(last_color_button)
-
-            # Check if live update is enabled and update colors
-            if self.live_update_toggle.get_active():
-                self.generate_main_gradient()
-            # Resize window
-            self.update_size()
-            if not self.color_buttons_vbox.children:
-                self.button_del_colorbutton.set_sensitive(False)
-                self.button_generate.set_sensitive(False)
-                self.button_save.set_sensitive(False)
-
-    def on_button_generate_clicked(self, button):  # Rename callback function
-        # Generate circular gradient with colors
-        self.generate_main_gradient()
-
-    def on_live_update_toggled(self, toggle_button):
-        # Check if live update is enabled and update colors
-        if toggle_button.get_active():
-            self.generate_main_gradient()
-
-    def generate_main_gradient(self):#, num_leds=40):
+    def update_gradient(self):#, num_leds=40):
         self.colors = self.retrieve_colors()
         if not self.colors:
             self.colors = [(0, 0, 0)]
@@ -293,20 +290,6 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
             self.gradient_transition.extend(gradient[:self.num_leds])
             self._transitioning = True
             self.gradient = gradient
-
-    def retrieve_colors(self):
-        # Retrieve colors from ColorButtons in the VBox and return an array of RGB tuples
-        colors = []
-        for child in self.color_buttons_vbox.children:
-            if isinstance(child, Gtk.ColorDialogButton):
-                color = child.get_rgba()
-                # Append RGB values without alpha
-                colors.append((
-                    int(color.red * 255),
-                    int(color.green * 255),
-                    int(color.blue * 255),
-                ))
-        return colors
 
     def generate_circular_gradient(self, colors, not_circular=False):#num_leds=40,
         gradient = []
@@ -366,6 +349,11 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         action_thread = Thread(target = thread_target)
         action_thread.start()
 
+    def die(self, *args):
+        self._thread_running = False
+        self.gradient_manager.save_to_file()
+        exit()
+
 class EzGradientApp(Gtk.Application):
     def __init__(self):
         Gtk.Application.__init__(
@@ -379,7 +367,6 @@ class EzGradientApp(Gtk.Application):
         # Create an instance of the window
         win = EzGradientApplicationWindow(application=app)
         win.connect('close-request', win.die)
-        #win.set_size_request(-1, -1)
         win.present()
 
 app = EzGradientApp()
