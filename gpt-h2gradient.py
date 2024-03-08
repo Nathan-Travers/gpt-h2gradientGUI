@@ -118,7 +118,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         listbox = Gtk.ListBox()
         listbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
         listbox.connect('row-activated', self.on_listbox_row_activate)
-        popover.set_child(listbox)
+        self.popover.set_child(listbox)
         button_open_popover.set_popover(self.popover)
 
         def update_listbox():
@@ -128,7 +128,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
                 row = Gtk.ListBoxRow()
                 row.set_child(Gtk.Label(label=gradient_name))
                 listbox.append(row)
-        popover._update_listbox = update_listbox
+        self.popover._update_listbox = update_listbox
         update_listbox()
 
         def signal_handler(sig, frame):
@@ -168,7 +168,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
             self.popover._update_listbox()
 
     def on_button_save_clicked(self, button):
-        self.dialog.present()
+        self.save_gradient_dialog.present()
 
     def on_button_generate_clicked(self, button):
         # Generate circular gradient with colors from ColorButtons
@@ -176,7 +176,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
 
     def on_live_update_toggled(self, toggle_button):
         self.update_gradient()
-        # This toggle itself is a flag for checks in on_button_add_colorbutton_clicked, del and on ColorDialog change (does speed/delay change even if it is off?)
+        # This toggle itself is a flag for checks in on_button_add_colorbutton_clicked, del and on ColorDialog change (does speed/delay change even if it is off? -- Yes, it does.)
 
     def on_scale_value_changed(self, scale):
         value = scale.get_value()
@@ -233,7 +233,8 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         if ecode:
             entry.set_text('Name already taken!')
         else:
-            self.dialog.close()
+            self.save_gradient_dialog.close()
+            entry.set_text('')
             self.popover._update_listbox()
 
     def on_listbox_row_activate(self, listbox, row):
