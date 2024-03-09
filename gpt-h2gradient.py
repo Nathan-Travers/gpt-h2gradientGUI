@@ -9,6 +9,11 @@ from json import dump, load
 from os.path import exists
 from signal import signal, SIGINT
 
+from gi.repository import GdkPixbuf, GLib#idk not importing GdkPixbuf breaks it all
+import numpy as np
+from PIL.Image import fromarray as im_fromarray
+from io import BytesIO
+
 class GradientManager:
     def __init__(self, filename):
         self.gradients = {}
@@ -37,11 +42,14 @@ class GradientManager:
 
     def get_gradients(self):
         return self.gradients
-        '''
-
-class ColorVisualizer(Gtk.Window):
-    def __init__(self, colors):
+        
+class ColorVisualizer_Buttons(Gtk.Window):
+    def __init__(self, width, height):
         Gtk.Window.__init__(self, title='Color Visualizer')
+        self.width = width
+        self.height = height # aka corner_1
+        self.corner_2 = height + width 
+        self.corner_3 = height * 2 + width
         self.set_default_size(400, 400)
 
         grid = Gtk.Grid()
@@ -53,125 +61,75 @@ class ColorVisualizer(Gtk.Window):
         grid.set_margin_end(8)
 
         # Top row
-        for i in range(12):
+        for i in range(self.width):
             color_button = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog())
             grid.attach(color_button, i, 0, 1, 1)
             color_button = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog())
-            grid.attach(color_button, i, 9, 1, 1)
+            grid.attach(color_button, i, self.height + 1, 1, 1)
 
         # Left side
-        for i in range(8):
+        for i in range(self.height):
             color_button = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog())
             grid.attach(color_button, 0, i + 1, 1, 1)
             color_button = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog())
-            grid.attach(color_button, 11, i + 1, 1, 1)
+            grid.attach(color_button, self.width - 1, i + 1, 1, 1)
 
         self.set_child(grid)
 
     def update_colors(self, colors):
-        for i in range(12):
+        for i in range(self.width):
             color_button = self.get_child().get_child_at(i, 0)
             color = Gdk.RGBA()
-            color.parse(f'rgb{colors[8+i][0], colors[8+i][1], colors[8+i][2]}')
+            color.parse(f'rgb{colors[self.height + i][0], colors[self.height + i][1], colors[self.height + i][2]}')
             color_button.set_rgba(color)
-            color_button = self.get_child().get_child_at(i, 9)
+            color_button = self.get_child().get_child_at(i, self.height + 1)
             color = Gdk.RGBA()
-            color.parse(f'rgb{colors[28+i][0], colors[28+i][1], colors[28+i][2]}')
+            color.parse(f'rgb{colors[self.corner_3 + i][0], colors[self.corner_3 + i][1], colors[self.corner_3 + i][2]}')
             color_button.set_rgba(color)
-            if 0 < i and i < 9:
+            if 0 < i and i < self.height + 1:
                 color_button = self.get_child().get_child_at(0, i)
                 color = Gdk.RGBA()
-                color.parse(f'rgb{colors[7-i][0], colors[7-i][1], colors[7-i][2]}')
+                color.parse(f'rgb{colors[self.height - i][0], colors[self.height - i][1], colors[self.height - i][2]}')
                 color_button.set_rgba(color)
-                color_button = self.get_child().get_child_at(11, i)
+                color_button = self.get_child().get_child_at(self.width - 1, i)
                 color = Gdk.RGBA()
-                color.parse(f'rgb{colors[20+i][0], colors[20+i][1], colors[20+i][2]}')
+                color.parse(f'rgb{colors[self.corner_2 + i][0], colors[self.corner_2 + i][1], colors[self.corner_2 + i][2]}')
                 color_button.set_rgba(color)
-'''
-from gi.repository import GdkPixbuf, GLib
-import numpy as np
-from PIL import Image
-from io import BytesIO
 
-class ColorVisualizer(Gtk.Window):
+class ColorVisualizer_Image(Gtk.Window):
     def __init__(self, width, height, pixel_size):
         super().__init__(title='Color Visualizer') #Gtk.Window.__init__(self, title='Color Visualizer')
         self.width = width
         self.height = height
         self.pixel_size = pixel_size
-        self.pixels = np.array([[(0, 0, 0) for _ in range(width)] for _ in range(height)], dtype=np.uint8)
+        self.pixels = np.zeros((height, width, 3), dtype=np.uint8)
         self.pixels_scaled = np.zeros((height * pixel_size, width * pixel_size, 3), dtype=np.uint8)
 
-        #self.image = Gtk.Image()
-        ##self.picture = Gtk.Picture()
-        #self.paintable = Gdk.Paintable.new_empty(200, 200)
-        #self.image=Gtk.Picture.new_for_paintable(self.paintable)
-        #self.image = Gtk.Picture()
-        self.picture = Gtk.Picture()#.new_for_paintable(texture)
+        self.picture = Gtk.Picture()
         self.set_child(self.picture)
-        #self.timer = GLib.timeout_add(100, self.update_image)
         self.present()
 
     def update_colors(self, colors):
-        #        self.pixels_scaled[y:y+self.pixel_size, x:x+self.pixel_size] = color
         self.pixels[:, 0] = colors[:8][::-1]
         self.pixels[0, :] = colors[8:20]
         self.pixels[:, 11] = colors[20:28]
         self.pixels[7, :] = colors[28:40][::-1]
 
-        '''directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
-        x, y = 0, self.height - 1
-        for color in colors:
-            for dx, dy in directions:
-                while 0 <= x < self.width and 0 <= y < self.height and self.pixels[y][x] == (0, 0, 0):
-                    self.pixels[y][x] = color
-                    x += dx
-                    y += dy
-                x -= dx
-                y -= dy'''
-
-        # Render the pixels with the specified pixel size
+        '''# Render the pixels with the specified pixel size
         for y in range(self.height):
             for x in range(self.width):
                 color = self.pixels[y][x]
                 for i in range(self.pixel_size):
                     for j in range(self.pixel_size):
-                        self.render_pixel(x * self.pixel_size + i, y * self.pixel_size + j, color)
+                        self.render_pixel(x * self.pixel_size + i, y * self.pixel_size + j, color)'''
 
-        img = Image.fromarray(self.pixels_scaled, 'RGB')
+        img = im_fromarray(self.pixels, 'RGB')
         img_byte_arr = BytesIO()
         img.save(img_byte_arr, format='PNG')
-        from random import randint
-        #if randint(0,1) == 0:
-        #    img.save('assssss.png', format='PNG')
-        #    print("A")
         img_byte_arr = img_byte_arr.getvalue()
         texture = Gdk.Texture.new_from_bytes(GLib.Bytes(img_byte_arr))
         #self.picture.invalidate_contents()
         self.picture.set_paintable(texture)
-
-        #data = GLib.Bytes(bytes(self.pixels))
-        '''data = bytes(self.pixels_scaled)
-        pixbuf = GdkPixbuf.Pixbuf.new_from_data(
-            data,
-            GdkPixbuf.Colorspace.RGB,
-            False,  # Has alpha channel
-            8,  # 8 bits per channel
-            self.width * self.pixel_size,
-            self.height * self.pixel_size,
-            self.width * 3  # Rowstride (3 bytes per pixel for RGB)
-        )'''
-        #self.paintable.snapshot(ss, 200, 200)
-        ##paintable = Gdk.Paintable.new_empty(self.width * self.pixel_size, self.height * self.pixel_size)
-        #self.picture.set_paintable(paintable)
-        #self.image.set_paintable(a)
-        #a=Gdk.Texture.new_from_bytes(data)
-        ##snapshot_ = Gtk.Snapshot()
-        ##texture = Gdk.Texture.new_for_pixbuf(pixbuf)
-        ##texture.snapshot(snapshot_, self.width * self.pixel_size, self.height * self.pixel_size)
-        #paintable.invalidate_contents()
-        ##paintable.snapshot(snapshot_, self.width * self.pixel_size, self.height * self.pixel_size)
-        ##self.picture.set_paintable(paintable)
 
     def render_pixel(self, x, y, color):
         # Render a pixel at the specified coordinates with the given color
@@ -319,7 +277,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         self.update_size()
 
         #self.update_gradient()
-        self.color_visualizer = ColorVisualizer(12,8,1)#[[0,0,0]]*40)
+        self.color_visualizer = ColorVisualizer_Buttons(12,8)#Image(12,8,2)#[[0,0,0]]*40)
         self.color_visualizer.present()
 
     def on_button_delete_clicked(self, button):
@@ -516,7 +474,8 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
                                 break
                             self.current_colour = self.gradient_transition[splice_ind1:num_leds+splice_ind1]
                             set_colours(self.current_colour)
-                            self.color_visualizer.update_colors(self.current_colour)
+                            #self.color_visualizer.update_colors(self.current_colour)
+                            GLib.idle_add(self.color_visualizer.update_colors, self.current_colour)
                         if self._transitioning_interrupt:
                             self._transitioning_interrupt = False
                         else:
@@ -525,7 +484,8 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
                     else:
                         self.current_colour = self.gradient[splice_ind:num_leds+splice_ind]
                         set_colours(self.current_colour)
-                        self.color_visualizer.update_colors(self.current_colour)
+                        #self.color_visualizer.update_colors(self.current_colour)
+                        GLib.idle_add(self.color_visualizer.update_colors, self.current_colour)
                     if not self._thread_running:
                         break
             exit()
