@@ -43,6 +43,13 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         Gtk.Window.__init__(self, title='EzGradient', application=application)
         self.set_default_size(413, 237)
         self.set_resizable(False)
+        self._group_len = 40 #num_leds
+        default_speed = 3
+
+        def signal_handler(sig, frame):
+            print('\nCaught Ctrl+C! Exiting gracefully.')
+            self.die()
+        signal(SIGINT, signal_handler)
 
         # Create buttons
         self.live_update_toggle = Gtk.ToggleButton(label='Live Update')
@@ -54,11 +61,23 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         button_open_popover = Gtk.MenuButton(label='Open Popover') # has no 'clicked' signal
 
         # Create a scale widget
-        scale_speed = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 8, .1)
+        scale_speed = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 20, .1)
+        scale_group_size = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 2, self._group_len * 2, 1)
         #scale_speed.set_inverted(True)
         #scale_speed.set_has_origin(False)
-        default_speed = 3
         scale_speed.set_value(default_speed)
+        scale_group_size.set_value(self._group_len)
+
+        self.label_speed = Gtk.Label(label=f'Delay ({default_speed*10}ms)')
+        self.label_speed.set_xalign(0.085)
+        self.label_group_size = Gtk.Label(label=f'Group size ({self._group_len})')
+        self.label_group_size.set_xalign(0.1)
+
+        scales_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        scales_vbox.append(self.label_speed)
+        scales_vbox.append(scale_speed)
+        scales_vbox.append(self.label_group_size)
+        scales_vbox.append(scale_group_size)
 
         # Connect signals
         button_add_colorbutton.connect('clicked', self.on_button_add_colorbutton_clicked)
@@ -68,6 +87,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         self.live_update_toggle.connect('toggled', self.on_live_update_toggled)
         button_save.connect('clicked', self.on_button_save_clicked)
         button_delete.connect('clicked', self.on_button_delete_clicked)
+        scale_group_size.connect('value-changed', self.on_group_size_value_changed)
 
         # Create a VBox to hold the ColorButtons
         self.color_buttons_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2) #Gtk.VBox(spacing=6)
@@ -84,20 +104,6 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
             self.color_buttons_vbox.append(color_button1)
             self.color_buttons_vbox.children.append(color_button1)
 
-        #scale_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        scales_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        label_speed = Gtk.Label(label=f'Delay ({default_speed*10}ms)')
-        label_speed.set_xalign(0.085)
-        self.label_speed = label_speed
-        scales_vbox.append(label_speed)
-        scales_vbox.append(scale_speed)
-        #scale.set_draw_value(True)
-        s_grid =scales_vbox
-        #s_grid = Gtk.Grid()
-        #s_grid.attach(l, 0, 0, 1, 1)
-        #s_grid.attach(scale, 1, 0, 3, 1)
-        #s_grid.attach(l1, 0, 1, 1, 1)
-
         # Create a grid layout for other widgets
         grid = Gtk.Grid()
         grid.set_row_spacing(4)
@@ -105,40 +111,21 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         grid.set_margin_top(3)
         grid.set_margin_start(3)
         grid.attach(self.live_update_toggle, 0, 0, 1, 1)
-        grid.attach(s_grid, 1, 0, 2, 1)
+        grid.attach(scales_vbox, 1, 0, 2, 1)
         grid.attach(button_add_colorbutton, 0, 1, 1, 1)
         grid.attach(button_del_colorbutton, 1, 1, 1, 1)
         grid.attach(button_generate, 2, 1, 1, 1)
         grid.attach(self.color_buttons_vbox, 0, 2, 3, 1)
-        g_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        g_hbox.append(button_open_popover)
-        g_hbox.append(button_save)
-        g_hbox.append(button_delete)
-        g_hbox.set_spacing(3)
-        g_hbox.set_homogeneous(True)
-        grid.attach(g_hbox, 0,4,3,1)
-        #grid.attach(button_open_popover, 0, 3, 1, 1)
-        #grid.attach(button_save, 1, 3, 1, 1)
-        #grid.attach(button_delete, 2, 3, 1, 1)
+        bottom_buttons_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        bottom_buttons_hbox.append(button_open_popover)
+        bottom_buttons_hbox.append(button_save)
+        bottom_buttons_hbox.append(button_delete)
+        bottom_buttons_hbox.set_spacing(3)
+        bottom_buttons_hbox.set_homogeneous(True)
+        grid.attach(bottom_buttons_hbox, 0, 4, 3, 1)
 
         # Add the grid to the window
         self.set_child(grid)
-
-        self._group_len = 60
-        label_group_size = Gtk.Label(label=f'Group size ({self._group_len})')
-        label_group_size.set_xalign(0.1)
-        scales_vbox.append(label_group_size)
-        scale_group_size = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 2, self._group_len, 1)
-        scale_group_size.set_value(self._group_len)
-        def _(*args):
-            self._group_len = int(scale_group_size.get_value())
-            if self.live_update_toggle.get_active():
-                self.update_gradient()
-            label_group_size.set_label(f'Group size ({self._group_len})')
-        scale_group_size.connect('value-changed', _)
-        #s_grid.attach(scale1, 1, 1, 1, 1)
-        #grid.attach(scale1, 0, 4, 3, 1)
-        scales_vbox.append(scale_group_size)
 
         filename = 'gradients.json'
         self.gradient_manager = GradientManager(filename)
@@ -166,11 +153,6 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         self.popover._update_listbox = update_listbox
         update_listbox()
 
-        def signal_handler(sig, frame):
-            print('\nCaught Ctrl+C! Exiting gracefully.')
-            self.die()
-        signal(SIGINT, signal_handler)
-
         # Create save gradient dialog window
         self.save_gradient_dialog = Gtk.Window()
         self.save_gradient_dialog.set_title('Enter Gradient Name')
@@ -186,8 +168,8 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         dialog_entry.set_placeholder_text('Then press [Enter]')
         dialog_entry.set_width_chars(30)  # Entry width
         dialog_entry.connect('activate', self.on_entry_complete)
-        self.save_gradient_dialog.set_child(dialog_grid)
         dialog_grid.attach(dialog_entry, 0, 0, 1, 1)
+        self.save_gradient_dialog.set_child(dialog_grid)
 
         self.shady_buttons = (button_del_colorbutton, button_generate, button_save)
         # Threading flags
@@ -226,6 +208,12 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         value = scale.get_value()
         self._thread_run_delay = value / 100
         self.label_speed.set_label(f'Delay ({round(value*10,1)}ms)')
+
+    def on_group_size_value_changed(self, scale):
+        self._group_len = int(scale.get_value())
+        self.label_group_size.set_label(f'Group size ({self._group_len})')
+        if self.live_update_toggle.get_active():
+            self.update_gradient()
 
     def on_color_set(self, *args):
         # Check if live update is enabled and update colors
