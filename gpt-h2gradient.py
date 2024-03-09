@@ -75,6 +75,8 @@ class ColorVisualizer_Buttons(Gtk.Window):
             grid.attach(color_button, self.width - 1, i + 1, 1, 1)
 
         self.set_child(grid)
+        self.set_hide_on_close(True)
+        self.set_resizable(False)
 
     def update_colors(self, colors):
         for i in range(self.width):
@@ -107,7 +109,8 @@ class ColorVisualizer_Image(Gtk.Window):
 
         self.picture = Gtk.Picture()
         self.set_child(self.picture)
-        self.present()
+        self.set_hide_on_close(True)
+        self.set_default_size(413, 237+40) #not the same scale as other window?
 
     def update_colors(self, colors):
         self.pixels[:, 0] = colors[:8][::-1]
@@ -141,6 +144,8 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         self.set_default_size(413, 237)
         self.set_resizable(False)
         self._group_len = 40 #num_leds
+        grid_row_spacing = 4
+        grid_column_spacing = 3
         default_speed = 3
 
         def signal_handler(sig, frame):
@@ -187,7 +192,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         scale_group_size.connect('value-changed', self.on_group_size_value_changed)
 
         # Create a VBox to hold the ColorButtons
-        self.color_buttons_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2) #Gtk.VBox(spacing=6)
+        self.color_buttons_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=grid_row_spacing // 2) #Gtk.VBox(spacing=6)
         # Add color buttons to the VBox with default colors
         self.color_buttons_vbox.children = []
         for color_rgb in range(3):
@@ -203,8 +208,8 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
 
         # Create a grid layout for other widgets
         grid = Gtk.Grid()
-        grid.set_row_spacing(4)
-        grid.set_column_spacing(3)
+        grid.set_row_spacing(grid_row_spacing)
+        grid.set_column_spacing(grid_column_spacing)
         grid.set_margin_top(3)
         grid.set_margin_start(3)
         grid.attach(self.live_update_toggle, 0, 0, 1, 1)
@@ -217,7 +222,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         bottom_buttons_hbox.append(button_open_popover)
         bottom_buttons_hbox.append(button_save)
         bottom_buttons_hbox.append(button_delete)
-        bottom_buttons_hbox.set_spacing(3)
+        bottom_buttons_hbox.set_spacing(grid_column_spacing)
         bottom_buttons_hbox.set_homogeneous(True)
         grid.attach(bottom_buttons_hbox, 0, 4, 3, 1)
 
@@ -273,12 +278,46 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         self._thread_running = False
         self._transitioning = False
         self._transitioning_interrupt = False
+        self._active_color_visualizers = []
 
         self.update_size()
 
         #self.update_gradient()
-        self.color_visualizer = ColorVisualizer_Buttons(12,8)#Image(12,8,2)#[[0,0,0]]*40)
-        self.color_visualizer.present()
+        #self.color_visualizer = ColorVisualizer_Buttons(12,8)#Image(12,8,2)#[[0,0,0]]*40)
+        #self.color_visualizer.present()
+
+        self.color_visualizer_buttons_window = ColorVisualizer_Buttons(12, 8)
+        self.color_visualizer_image_window = ColorVisualizer_Image(12, 8, 2)
+
+        hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=grid_column_spacing)
+        buttons_text = ('Open Visualizer (Buttons)', 'Open Visualizer (Image)')
+        buttons_funcs = (self.on_open_color_visualizer_buttons_clicked_window, self.on_open_color_visualizer_image_clicked_window)
+        for button_text, button_func in zip(buttons_text, buttons_funcs):
+            button = Gtk.Button(label=button_text) #make these togglebuttons
+            button.connect('clicked', button_func)
+            hbox.append(button)
+
+        grid.attach(hbox, 0, 5, 3, 1)
+
+        self.color_visualizer_buttons_window.connect('close-request', self.on_color_visualizer_buttons_close_window)
+        self.color_visualizer_image_window.connect('close-request', self.on_color_visualizer_image_close_window)
+
+    def on_color_visualizer_buttons_close_window(self, window):
+        #self._visualizing = False # lol I thought this didn't work but its because it does work that it starts working when I look haha
+        self._active_color_visualizers.remove(self.color_visualizer_buttons_window)
+
+    def on_color_visualizer_image_close_window(self, window):
+        self._active_color_visualizers.remove(self.color_visualizer_image_window)
+
+    def on_open_color_visualizer_buttons_clicked_window(self, button):
+        if self.color_visualizer_buttons_window not in self._active_color_visualizers:
+            self._active_color_visualizers.append(self.color_visualizer_buttons_window)
+            self.color_visualizer_buttons_window.present()
+
+    def on_open_color_visualizer_image_clicked_window(self, button):
+        if self.color_visualizer_image_window not in self._active_color_visualizers:
+            self._active_color_visualizers.append(self.color_visualizer_image_window)
+            self.color_visualizer_image_window.present()
 
     def on_button_delete_clicked(self, button):
         gradient_name = self.popover.get_child().get_selected_row()
@@ -462,8 +501,8 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
                 #    for channel in channels:
                 #        device.set_color(channel, 'super-fixed', colours)
                 #else:
-                #device.set_color('led1', 'super-fixed', colours[:40 // 2])
-                #device.set_color('led2', 'super-fixed', colours[:40 // 2:-1])
+                device.set_color('led1', 'super-fixed', colours[:40 // 2])
+                device.set_color('led2', 'super-fixed', colours[:40 // 2:-1])
 
             self._thread_running = True
             while self._thread_running:
@@ -474,8 +513,9 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
                                 break
                             self.current_colour = self.gradient_transition[splice_ind1:num_leds+splice_ind1]
                             set_colours(self.current_colour)
-                            #self.color_visualizer.update_colors(self.current_colour)
-                            GLib.idle_add(self.color_visualizer.update_colors, self.current_colour)
+                            if self._active_color_visualizers: #redundant
+                                for color_visualizer in self._active_color_visualizers:
+                                    GLib.idle_add(color_visualizer.update_colors, self.current_colour)
                         if self._transitioning_interrupt:
                             self._transitioning_interrupt = False
                         else:
@@ -484,8 +524,8 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
                     else:
                         self.current_colour = self.gradient[splice_ind:num_leds+splice_ind]
                         set_colours(self.current_colour)
-                        #self.color_visualizer.update_colors(self.current_colour)
-                        GLib.idle_add(self.color_visualizer.update_colors, self.current_colour)
+                        for color_visualizer in self._active_color_visualizers:
+                            GLib.idle_add(color_visualizer.update_colors, self.current_colour)
                     if not self._thread_running:
                         break
             exit()
@@ -514,3 +554,4 @@ class EzGradientApp(Gtk.Application):
 
 app = EzGradientApp()
 app.run()
+#add loop option which appends the gradient reversed
