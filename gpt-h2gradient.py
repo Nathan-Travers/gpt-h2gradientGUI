@@ -1,6 +1,6 @@
 import gi
 gi.require_version('Gtk', '4.0')
-gi.require_version('Gdk', '4.0')  # Require GDK version 4?
+gi.require_version('Gdk', '4.0')
 from gi.repository import Gdk, Gtk, Gio
 from liquidctl import driver
 from time import sleep
@@ -80,20 +80,27 @@ class ColorVisualizer_Buttons(Gtk.Window):
         self.set_resizable(False)
 
     def update_colors(self, colors):
+        def get_color_str_at_co_ord(co_ord):
+            return f'rgb{colors[co_ord][0], colors[co_ord][1], colors[co_ord][2]}'
+
         for i in range(self.width):
             color_button = self.get_child().get_child_at(i, 0)
             color = Gdk.RGBA()
-            color.parse(f'rgb{colors[self.height + i][0], colors[self.height + i][1], colors[self.height + i][2]}')
+            co_ord = self.height + i
+            color.parse(get_color_str_at_co_ord(co_ord))
             color_button.set_rgba(color)
             color_button = self.get_child().get_child_at(i, self.height + 1)
-            color.parse(f'rgb{colors[self.corner_3 + i][0], colors[self.corner_3 + i][1], colors[self.corner_3 + i][2]}')
+            co_ord = self.corner_3 + i
+            color.parse(get_color_str_at_co_ord(co_ord))
             color_button.set_rgba(color)
             if 0 < i and i < self.height + 1:
                 color_button = self.get_child().get_child_at(0, i)
-                color.parse(f'rgb{colors[self.height - i][0], colors[self.height - i][1], colors[self.height - i][2]}')
+                co_ord = self.height - i
+                color.parse(get_color_str_at_co_ord(co_ord))
                 color_button.set_rgba(color)
                 color_button = self.get_child().get_child_at(self.width - 1, i)
-                color.parse(f'rgb{colors[self.corner_2 + i][0], colors[self.corner_2 + i][1], colors[self.corner_2 + i][2]}')
+                co_ord = self.corner_2 + i
+                color.parse(get_color_str_at_co_ord(co_ord))
                 color_button.set_rgba(color)
 
 class ColorVisualizer_Image(Gtk.Window):
@@ -146,7 +153,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         button_generate = Gtk.Button(label='Generate')
         button_save = Gtk.Button(label='Save')
         button_delete = Gtk.Button(label='Delete')
-        button_open_popover = Gtk.MenuButton(label='Open Popover') # has no 'clicked' signal
+        button_open_saved_gradients_popover = Gtk.MenuButton(label='Saved Gradients') # has no 'clicked' signal
 
         # Create a scale widget
         scale_speed = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 20, .1)
@@ -194,7 +201,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
 
         # Create bottom buttons hbox
         bottom_buttons_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        bottom_buttons_hbox.append(button_open_popover)
+        bottom_buttons_hbox.append(button_open_saved_gradients_popover)
         bottom_buttons_hbox.append(button_save)
         bottom_buttons_hbox.append(button_delete)
         bottom_buttons_hbox.set_spacing(grid_column_spacing)
@@ -208,6 +215,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
             button = Gtk.ToggleButton(label=button_text) #make these togglebuttons
             button.connect('toggled', button_func)
             visualizer_buttons_hbox.append(button)
+        visualizer_buttons_hbox.set_homogeneous(True)
 
         # Create a grid layout for other widgets
         grid = Gtk.Grid()
@@ -235,13 +243,13 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
             self.gradient_manager.add_gradient('Sunset', [(255, 0, 0), (255, 165, 0), (255, 255, 0)])
             self.gradient_manager.save_to_file()
 
-        # Create popover
-        self.popover = Gtk.Popover()
+        # Create saved gradients popover
+        self.saved_gradients_popover = Gtk.Popover()
         listbox = Gtk.ListBox()
         listbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
         listbox.connect('row-activated', self.on_listbox_row_activate)
-        self.popover.set_child(listbox)
-        button_open_popover.set_popover(self.popover)
+        self.saved_gradients_popover.set_child(listbox)
+        button_open_saved_gradients_popover.set_popover(self.saved_gradients_popover)
 
         def update_listbox():
             listbox.remove_all()
@@ -250,7 +258,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
                 row = Gtk.ListBoxRow()
                 row.set_child(Gtk.Label(label=gradient_name))
                 listbox.append(row)
-        self.popover._update_listbox = update_listbox
+        self.saved_gradients_popover._update_listbox = update_listbox
         update_listbox()
 
         # Create save gradient dialog window
@@ -303,7 +311,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
             self.color_visualizer_image_window.close()
 
     def on_button_delete_clicked(self, button):
-        gradient_name = self.popover.get_child().get_selected_row()
+        gradient_name = self.saved_gradients_popover.get_child().get_selected_row()
         if gradient_name:
             gradient_name = gradient_name.get_child().get_text()
             alert_confirm_delete = Gtk.AlertDialog()
@@ -313,7 +321,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
             def alert_confirm_check(source_obj, async_result):
                 if source_obj.choose_finish(async_result) == 0:
                     self.gradient_manager.delete_gradient(gradient_name)
-                    self.popover._update_listbox()
+                    self.saved_gradients_popover._update_listbox()
             alert_confirm_delete.choose(self, None, alert_confirm_check)
 
     def on_button_save_clicked(self, button):
@@ -391,7 +399,7 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         else:
             self.save_gradient_dialog.close()
             entry.set_text('')
-            self.popover._update_listbox()
+            self.saved_gradients_popover._update_listbox()
 
     def on_listbox_row_activate(self, listbox, row):
         label_text = row.get_child().get_text()
