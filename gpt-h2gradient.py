@@ -159,12 +159,19 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         self._transitioning = False
         self._transitioning_interrupt = False
 
-    def on_button_delete_clicked(self, button): #Add a confirmation here! TODO
+    def on_button_delete_clicked(self, button):
         gradient_name = self.popover.get_child().get_selected_row()
         if gradient_name:
             gradient_name = gradient_name.get_child().get_text()
-            self.gradient_manager.delete_gradient(gradient_name)
-            self.popover._update_listbox()
+            alert_confirm_delete = Gtk.AlertDialog()
+            alert_confirm_delete.set_message('Caution')
+            alert_confirm_delete.set_detail(f"Delete '{gradient_name}'?")
+            alert_confirm_delete.set_buttons(['Delete','Cancel'])
+            def alert_confirm_check(source_obj, async_result):
+                if source_obj.choose_finish(async_result) == 0:
+                    self.gradient_manager.delete_gradient(gradient_name)
+                    self.popover._update_listbox()
+            alert_confirm_delete.choose(self, None, alert_confirm_check)
 
     def on_button_save_clicked(self, button):
         self.save_gradient_dialog.present()
