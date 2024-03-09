@@ -47,6 +47,7 @@ Note:
 - PyGObject 3.46.0+
 - liquidctl 1.13.0+
 - numpy 1.26.4+
+<br><br>Run `pip install -r requirements.txt` to install these.
 # Other requirements
 - Any LED strip compatible with liquidctl. 
  - If you want to use this with a different device, it should be pretty easy; Just modify the run_update_thread and set_colours functions in the EzGradientApplicationWindow class
