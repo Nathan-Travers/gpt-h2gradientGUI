@@ -76,6 +76,7 @@ class ColorVisualizer_Buttons(Gtk.Window):
 
         self.set_child(grid)
         self.set_hide_on_close(True)
+        self.set_deletable(False)
         self.set_resizable(False)
 
     def update_colors(self, colors):
@@ -85,31 +86,28 @@ class ColorVisualizer_Buttons(Gtk.Window):
             color.parse(f'rgb{colors[self.height + i][0], colors[self.height + i][1], colors[self.height + i][2]}')
             color_button.set_rgba(color)
             color_button = self.get_child().get_child_at(i, self.height + 1)
-            color = Gdk.RGBA()
             color.parse(f'rgb{colors[self.corner_3 + i][0], colors[self.corner_3 + i][1], colors[self.corner_3 + i][2]}')
             color_button.set_rgba(color)
             if 0 < i and i < self.height + 1:
                 color_button = self.get_child().get_child_at(0, i)
-                color = Gdk.RGBA()
                 color.parse(f'rgb{colors[self.height - i][0], colors[self.height - i][1], colors[self.height - i][2]}')
                 color_button.set_rgba(color)
                 color_button = self.get_child().get_child_at(self.width - 1, i)
-                color = Gdk.RGBA()
                 color.parse(f'rgb{colors[self.corner_2 + i][0], colors[self.corner_2 + i][1], colors[self.corner_2 + i][2]}')
                 color_button.set_rgba(color)
 
 class ColorVisualizer_Image(Gtk.Window):
-    def __init__(self, width, height, pixel_size):
+    def __init__(self, width, height):
         super().__init__(title='Color Visualizer') #Gtk.Window.__init__(self, title='Color Visualizer')
         self.width = width
         self.height = height
-        self.pixel_size = pixel_size
         self.pixels = np.zeros((height, width, 3), dtype=np.uint8)
-        self.pixels_scaled = np.zeros((height * pixel_size, width * pixel_size, 3), dtype=np.uint8)
+        self.pixels_scaled = np.zeros((height, width, 3), dtype=np.uint8)
 
         self.picture = Gtk.Picture()
         self.set_child(self.picture)
         self.set_hide_on_close(True)
+        self.set_deletable(False)
         self.set_default_size(413, 237+40) #not the same scale as other window?
 
     def update_colors(self, colors):
@@ -118,14 +116,6 @@ class ColorVisualizer_Image(Gtk.Window):
         self.pixels[:, 11] = colors[20:28]
         self.pixels[7, :] = colors[28:40][::-1]
 
-        '''# Render the pixels with the specified pixel size
-        for y in range(self.height):
-            for x in range(self.width):
-                color = self.pixels[y][x]
-                for i in range(self.pixel_size):
-                    for j in range(self.pixel_size):
-                        self.render_pixel(x * self.pixel_size + i, y * self.pixel_size + j, color)'''
-
         img = im_fromarray(self.pixels, 'RGB')
         img_byte_arr = BytesIO()
         img.save(img_byte_arr, format='PNG')
@@ -133,10 +123,6 @@ class ColorVisualizer_Image(Gtk.Window):
         texture = Gdk.Texture.new_from_bytes(GLib.Bytes(img_byte_arr))
         #self.picture.invalidate_contents()
         self.picture.set_paintable(texture)
-
-    def render_pixel(self, x, y, color):
-        # Render a pixel at the specified coordinates with the given color
-        self.pixels_scaled[y:y+self.pixel_size, x:x+self.pixel_size] = color
 
 class EzGradientApplicationWindow(Gtk.ApplicationWindow):
     def __init__(self, application):
@@ -206,6 +192,23 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
             self.color_buttons_vbox.append(color_button1)
             self.color_buttons_vbox.children.append(color_button1)
 
+        # Create bottom buttons hbox
+        bottom_buttons_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        bottom_buttons_hbox.append(button_open_popover)
+        bottom_buttons_hbox.append(button_save)
+        bottom_buttons_hbox.append(button_delete)
+        bottom_buttons_hbox.set_spacing(grid_column_spacing)
+        bottom_buttons_hbox.set_homogeneous(True)
+
+        # Create visualizer buttons hbox
+        visualizer_buttons_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=grid_column_spacing)
+        buttons_text = ('Open Visualizer (Buttons)', 'Open Visualizer (Image)')
+        buttons_funcs = (self.on_open_color_visualizer_buttons_toggled_window, self.on_open_color_visualizer_image_toggled_window)
+        for button_text, button_func in zip(buttons_text, buttons_funcs):
+            button = Gtk.ToggleButton(label=button_text) #make these togglebuttons
+            button.connect('toggled', button_func)
+            visualizer_buttons_hbox.append(button)
+
         # Create a grid layout for other widgets
         grid = Gtk.Grid()
         grid.set_row_spacing(grid_row_spacing)
@@ -218,13 +221,8 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         grid.attach(button_del_colorbutton, 1, 1, 1, 1)
         grid.attach(button_generate, 2, 1, 1, 1)
         grid.attach(self.color_buttons_vbox, 0, 2, 3, 1)
-        bottom_buttons_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        bottom_buttons_hbox.append(button_open_popover)
-        bottom_buttons_hbox.append(button_save)
-        bottom_buttons_hbox.append(button_delete)
-        bottom_buttons_hbox.set_spacing(grid_column_spacing)
-        bottom_buttons_hbox.set_homogeneous(True)
         grid.attach(bottom_buttons_hbox, 0, 4, 3, 1)
+        grid.attach(visualizer_buttons_hbox, 0, 5, 3, 1)
 
         # Add the grid to the window
         self.set_child(grid)
@@ -280,44 +278,29 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         self._transitioning_interrupt = False
         self._active_color_visualizers = []
 
+        self.color_visualizer_buttons_window = ColorVisualizer_Buttons(12, 8)
+        self.color_visualizer_image_window = ColorVisualizer_Image(12, 8)
+        self.color_visualizer_buttons_window.set_transient_for(self)
+        self.color_visualizer_image_window.set_transient_for(self)
         self.update_size()
 
         #self.update_gradient()
-        #self.color_visualizer = ColorVisualizer_Buttons(12,8)#Image(12,8,2)#[[0,0,0]]*40)
-        #self.color_visualizer.present()
 
-        self.color_visualizer_buttons_window = ColorVisualizer_Buttons(12, 8)
-        self.color_visualizer_image_window = ColorVisualizer_Image(12, 8, 2)
-
-        hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=grid_column_spacing)
-        buttons_text = ('Open Visualizer (Buttons)', 'Open Visualizer (Image)')
-        buttons_funcs = (self.on_open_color_visualizer_buttons_clicked_window, self.on_open_color_visualizer_image_clicked_window)
-        for button_text, button_func in zip(buttons_text, buttons_funcs):
-            button = Gtk.Button(label=button_text) #make these togglebuttons
-            button.connect('clicked', button_func)
-            hbox.append(button)
-
-        grid.attach(hbox, 0, 5, 3, 1)
-
-        self.color_visualizer_buttons_window.connect('close-request', self.on_color_visualizer_buttons_close_window)
-        self.color_visualizer_image_window.connect('close-request', self.on_color_visualizer_image_close_window)
-
-    def on_color_visualizer_buttons_close_window(self, window):
-        #self._visualizing = False # lol I thought this didn't work but its because it does work that it starts working when I look haha
-        self._active_color_visualizers.remove(self.color_visualizer_buttons_window)
-
-    def on_color_visualizer_image_close_window(self, window):
-        self._active_color_visualizers.remove(self.color_visualizer_image_window)
-
-    def on_open_color_visualizer_buttons_clicked_window(self, button):
+    def on_open_color_visualizer_buttons_toggled_window(self, button):
         if self.color_visualizer_buttons_window not in self._active_color_visualizers:
             self._active_color_visualizers.append(self.color_visualizer_buttons_window)
             self.color_visualizer_buttons_window.present()
+        else:
+            self._active_color_visualizers.remove(self.color_visualizer_buttons_window)
+            self.color_visualizer_buttons_window.close()
 
-    def on_open_color_visualizer_image_clicked_window(self, button):
+    def on_open_color_visualizer_image_toggled_window(self, button):
         if self.color_visualizer_image_window not in self._active_color_visualizers:
             self._active_color_visualizers.append(self.color_visualizer_image_window)
             self.color_visualizer_image_window.present()
+        else:
+            self._active_color_visualizers.remove(self.color_visualizer_image_window)
+            self.color_visualizer_image_window.close()
 
     def on_button_delete_clicked(self, button):
         gradient_name = self.popover.get_child().get_selected_row()
@@ -555,3 +538,4 @@ class EzGradientApp(Gtk.Application):
 app = EzGradientApp()
 app.run()
 #add loop option which appends the gradient reversed
+#make other windows present offset from main window
