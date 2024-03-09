@@ -11,7 +11,7 @@ Use colour buttons to create gradients, then generate them and run them on the L
 
 This is mainly for use with liquidctl to update (in my case) the Hue 2 RGB LED strips. *(But is easily extensible to other devices.)*
 
-<img src="preview.gif" width="25%"/>
+<img src="preview.gif" width="50%"/>
 <br><br>
 This gradient does loop by default from the end colour to the start colour, but this isn't possibly visible as this would have to be one continuous gradient, all visible at once. 
 
