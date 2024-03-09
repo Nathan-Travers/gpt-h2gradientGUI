@@ -54,22 +54,23 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         button_open_popover = Gtk.MenuButton(label='Open Popover') # has no 'clicked' signal
 
         # Create a scale widget
-        scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 6, .1)
-        scale.set_inverted(True)
-        scale.set_has_origin(False)
-        scale.set_value(3)
+        scale_speed = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 8, .1)
+        #scale_speed.set_inverted(True)
+        #scale_speed.set_has_origin(False)
+        default_speed = 3
+        scale_speed.set_value(default_speed)
 
         # Connect signals
         button_add_colorbutton.connect('clicked', self.on_button_add_colorbutton_clicked)
         button_del_colorbutton.connect('clicked', self.on_button_del_colorbutton_clicked)
         button_generate.connect('clicked', self.on_button_generate_clicked)
-        scale.connect('value-changed', self.on_scale_value_changed)
+        scale_speed.connect('value-changed', self.on_scale_speed_value_changed)
         self.live_update_toggle.connect('toggled', self.on_live_update_toggled)
         button_save.connect('clicked', self.on_button_save_clicked)
         button_delete.connect('clicked', self.on_button_delete_clicked)
 
         # Create a VBox to hold the ColorButtons
-        self.color_buttons_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6) #Gtk.VBox(spacing=6)
+        self.color_buttons_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2) #Gtk.VBox(spacing=6)
         # Add color buttons to the VBox with default colors
         self.color_buttons_vbox.children = []
         for color_rgb in range(3):
@@ -83,6 +84,19 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
             self.color_buttons_vbox.append(color_button1)
             self.color_buttons_vbox.children.append(color_button1)
 
+        #scale_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        scales_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        label_speed = Gtk.Label(label=f'Delay ({default_speed*10}ms)')
+        label_speed.set_xalign(0.085)
+        self.label_speed = label_speed
+        scales_vbox.append(label_speed)
+        scales_vbox.append(scale_speed)
+        #scale.set_draw_value(True)
+        s_grid =scales_vbox
+        #s_grid = Gtk.Grid()
+        #s_grid.attach(l, 0, 0, 1, 1)
+        #s_grid.attach(scale, 1, 0, 3, 1)
+        #s_grid.attach(l1, 0, 1, 1, 1)
 
         # Create a grid layout for other widgets
         grid = Gtk.Grid()
@@ -91,18 +105,40 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         grid.set_margin_top(3)
         grid.set_margin_start(3)
         grid.attach(self.live_update_toggle, 0, 0, 1, 1)
-        grid.attach(scale, 1, 0, 3, 1)
+        grid.attach(s_grid, 1, 0, 2, 1)
         grid.attach(button_add_colorbutton, 0, 1, 1, 1)
         grid.attach(button_del_colorbutton, 1, 1, 1, 1)
         grid.attach(button_generate, 2, 1, 1, 1)
         grid.attach(self.color_buttons_vbox, 0, 2, 3, 1)
-        grid.attach(button_open_popover, 0, 3, 1, 1)
-        grid.attach(button_save, 1, 3, 1, 1)
-        grid.attach(button_delete, 2, 3, 1, 1)
+        g_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        g_hbox.append(button_open_popover)
+        g_hbox.append(button_save)
+        g_hbox.append(button_delete)
+        g_hbox.set_spacing(3)
+        g_hbox.set_homogeneous(True)
+        grid.attach(g_hbox, 0,4,3,1)
+        #grid.attach(button_open_popover, 0, 3, 1, 1)
+        #grid.attach(button_save, 1, 3, 1, 1)
+        #grid.attach(button_delete, 2, 3, 1, 1)
 
         # Add the grid to the window
         self.set_child(grid)
 
+        self._group_len = 60
+        label_group_size = Gtk.Label(label=f'Group size ({self._group_len})')
+        label_group_size.set_xalign(0.1)
+        scales_vbox.append(label_group_size)
+        scale_group_size = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 2, self._group_len, 1)
+        scale_group_size.set_value(self._group_len)
+        def _(*args):
+            self._group_len = int(scale_group_size.get_value())
+            if self.live_update_toggle.get_active():
+                self.update_gradient()
+            label_group_size.set_label(f'Group size ({self._group_len})')
+        scale_group_size.connect('value-changed', _)
+        #s_grid.attach(scale1, 1, 1, 1, 1)
+        #grid.attach(scale1, 0, 4, 3, 1)
+        scales_vbox.append(scale_group_size)
 
         filename = 'gradients.json'
         self.gradient_manager = GradientManager(filename)
@@ -159,6 +195,8 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         self._transitioning = False
         self._transitioning_interrupt = False
 
+        self.update_size()
+
     def on_button_delete_clicked(self, button):
         gradient_name = self.popover.get_child().get_selected_row()
         if gradient_name:
@@ -184,9 +222,10 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
         self.update_gradient()
         # This toggle itself is a flag for checks in on_button_add_colorbutton_clicked, del and on ColorDialog change (does speed/delay change even if it is off? -- Yes, it does.)
 
-    def on_scale_value_changed(self, scale):
+    def on_scale_speed_value_changed(self, scale):
         value = scale.get_value()
         self._thread_run_delay = value / 100
+        self.label_speed.set_label(f'Delay ({round(value*10,1)}ms)')
 
     def on_color_set(self, *args):
         # Check if live update is enabled and update colors
@@ -305,13 +344,17 @@ class EzGradientApplicationWindow(Gtk.ApplicationWindow):
             start_color = colors[i]
             end_color = colors[(i + 1) % len(colors)]
 
-            for led_index in range(num_leds):
-                ratio = led_index / (num_leds - 1)
+            for led_index in range(self._group_len):
+                ratio = led_index / (self._group_len - 1)
                 r = start_color[0] + ratio * (end_color[0] - start_color[0])
                 g = start_color[1] + ratio * (end_color[1] - start_color[1])
                 b = start_color[2] + ratio * (end_color[2] - start_color[2])
                 gradient.append((int(r), int(g), int(b)))
 
+        intended_len = num_leds * (len(colors) - not_circular)
+        while len(gradient) < intended_len:
+            gradient.extend(gradient)
+        gradient = gradient[:intended_len]
         return gradient
 
     def run_update_thread(self, num_leds, delay=0.03):
